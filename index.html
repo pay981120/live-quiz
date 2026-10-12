@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>即時搶答</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0e1530; --bg2:#141d3f; --panel:#1a2550; --line:#2a3768;
+  --ink:#f4f6ff; --muted:#9ba6cc; --accent:#ffd166; --ok:#3ddc97; --bad:#ff6b6b;
+  --o0:#e5484d; --o1:#3e63dd; --o2:#e8a317; --o3:#2f9e68;
+  --gold:#ffcc4d; --silver:#cfd8e6; --bronze:#e0995e;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:radial-gradient(1200px 700px at 80% -10%,#26357a 0%,transparent 60%),radial-gradient(900px 600px at -10% 110%,#3b1f5e 0%,transparent 55%),var(--bg);
+  color:var(--ink);font-family:"Noto Sans TC","Microsoft JhengHei","PingFang TC",system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+button{font:inherit;cursor:pointer;border:0;color:inherit}
+input,textarea,select{font:inherit;color:inherit}
+.btn{background:var(--accent);color:#1b1b2f;font-weight:700;border-radius:14px;padding:.75em 1.4em;font-size:clamp(15px,1.4vw,20px);transition:transform .12s,filter .12s;box-shadow:0 6px 0 #c99a2e}
+.btn:hover{filter:brightness(1.06)}.btn:active{transform:translateY(3px);box-shadow:0 3px 0 #c99a2e}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn.ghost{background:transparent;color:var(--ink);box-shadow:none;border:2px solid var(--line)}
+.btn.ghost:hover{border-color:var(--muted)}
+.muted{color:var(--muted)}
+
+/* ---------- HOST ---------- */
+.host{min-height:100vh;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;gap:16px;padding:14px 28px;border-bottom:1px solid var(--line);background:rgba(10,15,35,.45);backdrop-filter:blur(6px)}
+.brand{font-weight:900;font-size:20px;letter-spacing:.06em}
+.brand b{color:var(--accent)}
+.topbar .sp{flex:1}
+.pill{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:15px;white-space:nowrap}
+.pill strong{color:var(--accent);letter-spacing:.12em}
+.iconbtn{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 12px;font-size:14px}
+.banner{background:#5a1d2a;color:#ffd7dc;padding:8px 28px;font-size:14px}
+.banner.warn{background:#5a4a1d;color:#fff1c7}
+.stage{flex:1;display:flex;flex-direction:column;padding:clamp(16px,3vw,40px);gap:clamp(14px,2vw,28px)}
+.foot{display:flex;justify-content:flex-end;gap:12px;align-items:center}
+
+/* lobby */
+.lobby{display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:clamp(20px,3vw,48px);flex:1;align-items:start}
+.joincard{background:#fff;color:#0e1530;border-radius:24px;padding:24px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.joincard h2{font-size:22px;font-weight:900;margin-bottom:14px}
+#qr{display:flex;justify-content:center;margin:6px auto 14px}
+#qr img,#qr canvas{width:100%!important;max-width:320px;height:auto!important;image-rendering:pixelated}
+.code{font-size:44px;font-weight:900;letter-spacing:.18em;color:#3e63dd}
+.url{font-size:13px;word-break:break-all;color:#56608a;margin-top:6px}
+.lobby-right h1{font-size:clamp(28px,3.6vw,52px);font-weight:900;line-height:1.15}
+.lobby-right h1 span{color:var(--accent)}
+.lobby-right .sub{margin:10px 0 22px;font-size:clamp(15px,1.4vw,19px)}
+.plist{display:flex;flex-wrap:wrap;gap:10px;min-height:120px;align-content:flex-start}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:clamp(15px,1.4vw,20px);font-weight:700;animation:pop .35s cubic-bezier(.2,1.6,.4,1)}
+.chip:hover{border-color:var(--bad);text-decoration:line-through}
+.chip.off{opacity:.45}
+.empty{border:2px dashed var(--line);border-radius:18px;padding:28px;color:var(--muted);width:100%;text-align:center}
+.settings{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:24px}
+.settings select{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+@keyframes pop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
+
+/* question */
+.qhead{display:flex;align-items:center;gap:20px}
+.qnum{font-size:clamp(14px,1.3vw,18px);color:var(--muted);font-weight:700;letter-spacing:.1em}
+.qtext{font-size:clamp(26px,3.4vw,54px);font-weight:900;line-height:1.25;flex:1}
+.ring{width:clamp(80px,8vw,120px);height:clamp(80px,8vw,120px);position:relative;flex:none}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .num{position:absolute;inset:0;display:grid;place-items:center;font-size:clamp(28px,3vw,44px);font-weight:900}
+.ring circle{fill:none;stroke-width:9}
+.ring .bgc{stroke:var(--line)}.ring .fgc{stroke:var(--accent);stroke-linecap:round;transition:stroke-dashoffset .1s linear}
+.ring.low .fgc{stroke:var(--bad)}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:clamp(10px,1.4vw,20px);flex:1;min-height:0}
+.opt{border-radius:18px;padding:clamp(14px,2vw,28px);display:flex;align-items:center;gap:18px;font-size:clamp(20px,2.4vw,38px);font-weight:700;position:relative;overflow:hidden;transition:opacity .3s,transform .3s;min-height:clamp(80px,14vh,160px)}
+.opt .sh{font-size:.9em;opacity:.9;flex:none;width:1.4em;text-align:center}
+.opt.c0{background:var(--o0)}.opt.c1{background:var(--o1)}.opt.c2{background:var(--o2)}.opt.c3{background:var(--o3)}
+.opt.dim{opacity:.28}
+.opt.win{outline:5px solid #fff;transform:scale(1.02)}
+.opt .cnt{margin-left:auto;font-size:.8em;font-weight:900;background:rgba(0,0,0,.25);border-radius:12px;padding:4px 14px;z-index:1}
+.opt .bar{position:absolute;left:0;bottom:0;height:8px;background:rgba(255,255,255,.65);transition:width .8s ease}
+.opt .tick{font-size:1em;z-index:1}
+.anscount{font-size:clamp(16px,1.5vw,22px)}
+.anscount b{color:var(--accent);font-size:1.4em}
+
+/* board */
+.board-title{font-size:clamp(26px,3vw,46px);font-weight:900}
+.rows{display:flex;flex-direction:column;gap:10px;flex:1}
+.row{display:grid;grid-template-columns:64px 34px 1fr auto 130px;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 18px;position:relative;overflow:hidden;font-size:clamp(17px,1.7vw,26px);animation:slide .45s both}
+.row .fill{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,rgba(255,209,102,.16),rgba(255,209,102,.02));z-index:0;transition:width .9s ease}
+.row>*{position:relative;z-index:1}
+.row .rk{font-weight:900;font-size:1.25em;color:var(--accent)}
+.row .mv{font-size:.7em;text-align:center}.mv.up{color:var(--ok)}.mv.dn{color:var(--bad)}
+.row .nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .gain{font-size:.75em;color:var(--ok);font-weight:700}
+.row .sc{text-align:right;font-weight:900}
+@keyframes slide{from{transform:translateX(-30px);opacity:0}to{transform:none;opacity:1}}
+
+/* podium */
+.podium-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;position:relative}
+.podium-title{font-size:clamp(30px,3.6vw,58px);font-weight:900;text-align:center;margin-bottom:auto;padding-top:4px}
+.podium-title span{color:var(--accent)}
+.podium{display:flex;align-items:flex-end;justify-content:center;gap:clamp(10px,2vw,28px);width:min(1000px,100%);height:min(56vh,560px)}
+.pcol{flex:1;max-width:300px;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;animation:rise .9s cubic-bezier(.2,1.2,.4,1) both}
+.pcol.p1{animation-delay:1.6s}.pcol.p2{animation-delay:.8s}.pcol.p3{animation-delay:.1s}
+.pcard{width:100%;background:linear-gradient(180deg,#24306a,#1a2550);border:2px solid var(--line);border-radius:20px;padding:18px 12px 16px;text-align:center;margin-bottom:12px;position:relative;box-shadow:0 18px 40px rgba(0,0,0,.35)}
+.p1 .pcard{border-color:var(--gold);box-shadow:0 0 0 4px rgba(255,204,77,.18),0 18px 50px rgba(255,204,77,.25)}
+.p2 .pcard{border-color:var(--silver)}.p3 .pcard{border-color:var(--bronze)}
+.medal{width:clamp(54px,5vw,76px);height:clamp(54px,5vw,76px);border-radius:50%;margin:-52px auto 8px;display:grid;place-items:center;font-size:clamp(24px,2.4vw,36px);font-weight:900;color:#1b1b2f;border:5px solid #0e1530}
+.p1 .medal{background:var(--gold)}.p2 .medal{background:var(--silver)}.p3 .medal{background:var(--bronze)}
+.crown{font-size:clamp(34px,3.4vw,52px);position:absolute;top:-96px;left:50%;transform:translateX(-50%);animation:bob 2s ease-in-out infinite}
+.pname{font-size:clamp(20px,2.2vw,34px);font-weight:900;word-break:break-all;line-height:1.2}
+.pscore{color:var(--accent);font-weight:700;font-size:clamp(15px,1.5vw,22px);margin-top:4px}
+.pillar{width:100%;border-radius:16px 16px 0 0;display:grid;place-items:start center;padding-top:12px;font-size:clamp(48px,6vw,96px);font-weight:900;color:rgba(14,21,48,.55)}
+.p1 .pillar{height:46%;background:linear-gradient(180deg,#ffe08a,#e5a92b)}
+.p2 .pillar{height:32%;background:linear-gradient(180deg,#eef3fa,#9fb0c8)}
+.p3 .pillar{height:22%;background:linear-gradient(180deg,#f3be8f,#b9713b)}
+@keyframes rise{from{transform:translateY(80px);opacity:0}to{transform:none;opacity:1}}
+@keyframes bob{50%{transform:translate(-50%,-6px)}}
+.confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:5}
+.confetti i{position:absolute;top:-20px;width:10px;height:16px;border-radius:2px;animation:fall linear infinite}
+@keyframes fall{to{transform:translateY(110vh) rotate(720deg)}}
+
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(5,8,20,.75);display:grid;place-items:center;z-index:20;padding:20px}
+.mbox{background:var(--bg2);border:1px solid var(--line);border-radius:20px;width:min(860px,100%);max-height:90vh;display:flex;flex-direction:column}
+.mhead,.mfoot{padding:16px 22px;display:flex;align-items:center;gap:12px}
+.mhead{border-bottom:1px solid var(--line)}.mhead h3{flex:1;font-size:20px}
+.mfoot{border-top:1px solid var(--line);justify-content:flex-end;flex-wrap:wrap}
+.mbody{overflow:auto;padding:18px 22px;display:flex;flex-direction:column;gap:16px}
+.qed{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+.qed .qh{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-weight:700}
+.qed .qh span{flex:1}
+.qed textarea{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;resize:vertical;min-height:52px}
+.oed{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.oed label{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:6px 10px}
+.oed label.ok{border-color:var(--ok)}
+.oed input[type=text]{flex:1;background:transparent;border:0;outline:0;padding:4px 0;min-width:0}
+.oed .sw{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:12px;flex:none}
+.err{color:var(--bad);font-size:14px;margin-right:auto}
+
+/* ---------- PLAYER ---------- */
+.player{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-width:560px;margin:0 auto}
+.phead{display:flex;justify-content:space-between;align-items:center;font-size:14px;color:var(--muted);margin-bottom:14px}
+.phead b{color:var(--ink)}
+.center{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:14px}
+.logo{font-size:30px;font-weight:900}.logo b{color:var(--accent)}
+.field{width:100%;background:var(--panel);border:2px solid var(--line);border-radius:14px;padding:14px 16px;font-size:20px;text-align:center;outline:0}
+.field:focus{border-color:var(--accent)}
+.player .btn{width:100%;font-size:20px;padding:14px}
+.dots{display:flex;gap:8px}.dots i{width:12px;height:12px;border-radius:50%;background:var(--accent);animation:dot 1.2s infinite}
+.dots i:nth-child(2){animation-delay:.2s}.dots i:nth-child(3){animation-delay:.4s}
+@keyframes dot{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+.tbar{height:8px;background:var(--line);border-radius:99px;overflow:hidden;margin-bottom:14px}
+.tbar i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.pq{font-size:20px;font-weight:700;line-height:1.4;margin-bottom:14px}
+.popts{display:grid;gap:10px;flex:1;grid-auto-rows:1fr}
+.popt{border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:12px;font-size:19px;font-weight:700;text-align:left;min-height:64px;transition:transform .1s}
+.popt:active{transform:scale(.97)}
+.popt.c0{background:var(--o0)}.popt.c1{background:var(--o1)}.popt.c2{background:var(--o2)}.popt.c3{background:var(--o3)}
+.big{font-size:64px;line-height:1}
+.verdict{font-size:30px;font-weight:900}
+.verdict.ok{color:var(--ok)}.verdict.bad{color:var(--bad)}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;width:100%;display:flex;justify-content:space-around}
+.stat div{display:flex;flex-direction:column;gap:2px}.stat b{font-size:28px;color:var(--accent)}.stat span{font-size:13px;color:var(--muted)}
+.chosen{border-radius:14px;padding:12px 16px;font-weight:700;font-size:18px;width:100%}
+.netnote{font-size:13px;color:var(--muted);text-align:center;margin-top:10px}
+
+@media (max-width:820px){
+  .lobby{grid-template-columns:1fr}
+  .opts{grid-template-columns:1fr}
+  .row{grid-template-columns:44px 24px 1fr 90px}.row .gain{display:none}
+  .topbar{padding:10px 14px;flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal"></div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+/* ============================================================
+   即時搶答｜主持人頁＋學員頁（同一檔案）
+   - 直接開啟 = 主持人畫面
+   - 網址帶 ?join=六位數代碼 = 學員畫面（QR Code 會帶這個）
+   連線：PeerJS（WebRTC 點對點），不需後端與帳號
+   ============================================================ */
+
+const DEFAULT_QS = [
+  { q: "台灣最高的山是哪一座？", opts: ["雪山", "玉山", "合歡山", "阿里山"], a: 1 },
+  { q: "一年之中有幾個月有 31 天？", opts: ["5 個月", "6 個月", "7 個月", "8 個月"], a: 2 },
+  { q: "太陽光到達地球大約需要多久？", opts: ["8 秒", "8 分鐘", "8 小時", "8 天"], a: 1 },
+  { q: "下列哪一種動物「不是」哺乳類？", opts: ["鯨魚", "蝙蝠", "企鵝", "海豚"], a: 2 },
+  { q: "人體最大的器官是？", opts: ["肝臟", "皮膚", "大腸", "肺臟"], a: 1 },
+  { q: "「三人行，必有我師焉」出自哪本書？", opts: ["論語", "孟子", "大學", "中庸"], a: 0 },
+  { q: "一大氣壓下，水的沸點是幾度 C？", opts: ["90", "100", "110", "120"], a: 1 }
+];
+const PREFIX = "lq7-live-quiz-";
+const SHAPES = ["▲", "◆", "●", "■"];
+const BOT_NAMES = ["小明","阿華","佩佩","Kevin","小芸","大雄","Amy","阿傑","思思","Leo","小魚","Tony"];
+
+const $ = s => document.querySelector(s);
+const app = $("#app"), modal = $("#modal");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const fmt = n => Number(n || 0).toLocaleString("zh-TW");
+
+
+/* ============================================================
+   HOST
+   ============================================================ */
+let H;
+function startHost() {
+  H = {
+    qs: LS.get("lq7_qs", DEFAULT_QS), dur: LS.get("lq7_dur", 20),
+    players: new Map(), phase: "lobby", qi: -1, game: null,
+    answers: new Map(), qStart: 0, timer: null,
+    code: "", peer: null, status: "connecting", err: ""
+  };
+  connectHostPeer();
+  renderHost();
+  document.addEventListener("keydown", e => {
+    if (modal.innerHTML || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+    if (e.key === " " || e.key === "Enter" || e.key === "ArrowRight" || e.key === "PageDown") {
+      const b = document.querySelector("[data-primary]");
+      if (b && !b.disabled) { e.preventDefault(); b.click(); }
+    }
+  });
+}
+
+function connectHostPeer() {
+  H.code = String(Math.floor(100000 + Math.random() * 900000));
+  if (typeof Peer === "undefined") { H.status = "nolib"; return; }
+  const peer = new Peer(PREFIX + H.code, { debug: 0 });
+  H.peer = peer;
+  peer.on("open", () => { H.status = "ready"; if (H.phase === "lobby") renderHost(); else renderBanner(); });
+  peer.on("connection", conn => {
+    conn.on("data", d => onHostData(conn, d));
+    conn.on("close", () => {
+      const p = H.players.get(conn.pid);
+      if (p && p.conn === conn) { p.online = false; p.conn = null; refreshCounts(); }
+    });
+  });
+  peer.on("disconnected", () => { try { if (!peer.destroyed) peer.reconnect(); } catch (e) {} });
+  peer.on("error", err => {
+    if (err.type === "unavailable-id" && H.phase === "lobby") { peer.destroy(); connectHostPeer(); renderHost(); return; }
+    if (err.type === "peer-unavailable") return;
+    H.status = "error"; H.err = err.type || String(err);
+    renderBanner();
+  });
+}
+
+function joinURL() {
+  const base = location.href.split("#")[0].split("?")[0];
+  return base + "?join=" + H.code;
+}
+
+function onHostData(conn, d) {
+  if (!d || typeof d !== "object") return;
+  if (d.t === "join") {
+    const id = String(d.id || "").slice(0, 40);
+    if (!id) return;
+    let p = H.players.get(id);
+    if (!p) {
+      let name = String(d.name || "").replace(/\s+/g, " ").trim().slice(0, 12) || "玩家";
+      p = newPlayer(id, uniqueName(name));
+      H.players.set(id, p);
+    }
+    if (p.conn && p.conn !== conn) { try { p.conn.close(); } catch (e) {} }
+    p.conn = conn; p.online = true; conn.pid = id;
+    sendState(p);
+    refreshCounts();
+  } else if (d.t === "answer") {
+    handleAnswer(conn.pid, d.q, d.c);
+  }
+}
+
+function newPlayer(id, name, bot = false) {
+  return { id, name, bot, score: 0, time: 0, gain: 0, ok: false, answered: false, rank: 0, prevRank: 0, online: true, conn: null };
+}
+function uniqueName(name) {
+  const used = new Set([...H.players.values()].map(p => p.name));
+  if (!used.has(name)) return name;
+  let i = 2; while (used.has(name + i)) i++;
+  return name + i;
+}
+function curQ() { return H.game[H.qi]; }
+function onlineCount() { return [...H.players.values()].filter(p => p.online).length; }
+
+function normalizeQs(qs) {
+  return qs.map(q => {
+    const list = q.opts.map((t, i) => ({ t: String(t || "").trim(), i })).filter(o => o.t);
+    return { q: String(q.q || "").trim(), opts: list.map(o => o.t), a: list.findIndex(o => o.i === q.a) };
+  }).filter(q => q.q && q.opts.length >= 2 && q.a >= 0);
+}
+
+function sendState(p) {
+  if (p.bot || !p.conn || !p.conn.open) return;
+  try { p.conn.send(stateFor(p)); } catch (e) {}
+}
+function broadcast() { H.players.forEach(sendState); }
+
+function stateFor(p) {
+  const total = H.game ? H.game.length : normalizeQs(H.qs).length;
+  const s = { t: "state", phase: H.phase, name: p.name, score: p.score, rank: p.rank, n: H.players.size, qi: H.qi, total };
+  if (H.phase === "question" || H.phase === "reveal") {
+    const q = curQ(), a = H.answers.get(p.id);
+    s.q = q.q; s.opts = q.opts; s.mine = a ? a.c : null;
+    if (H.phase === "question") { s.left = Math.max(0, H.qStart + H.dur * 1000 - Date.now()); s.dur = H.dur * 1000; }
+    else { s.correct = q.a; s.gain = p.gain; s.ok = p.ok; s.answered = p.answered; }
+  }
+  return s;
+}
+
+function handleAnswer(pid, qi, c) {
+  if (H.phase !== "question" || qi !== H.qi) return;
+  const p = H.players.get(pid);
+  if (!p || H.answers.has(pid)) return;
+  const ms = Date.now() - H.qStart;
+  if (ms > H.dur * 1000 + 600) return;
+  c = Number(c);
+  if (!(c >= 0 && c < curQ().opts.length)) return;
+  H.answers.set(pid, { c, ms });
+  sendState(p);
+  refreshCounts();
+  if (H.answers.size >= onlineCount()) {
+    setTimeout(() => { if (H.phase === "question" && H.qi === qi) endQuestion(); }, 700);
+  }
+}
+
+/* ---- game flow ---- */
+function startGame() {
+  H.game = normalizeQs(H.qs);
+  if (!H.game.length) { alert("題目不完整，請先到「編輯題目」確認。"); return; }
+  H.players.forEach(p => Object.assign(p, { score: 0, time: 0, gain: 0, ok: false, answered: false, rank: 0, prevRank: 0 }));
+  H.qi = -1;
+  nextQuestion();
+}
+function nextQuestion() {
+  H.qi++;
+  if (H.qi >= H.game.length) return showPodium();
+  H.phase = "question";
+  H.answers.clear();
+  H.qStart = Date.now();
+  broadcast();
+  renderHost();
+  clearInterval(H.timer);
+  H.timer = setInterval(tick, 100);
+  scheduleBots();
+}
+function tick() {
+  const left = Math.max(0, H.qStart + H.dur * 1000 - Date.now());
+  const num = $("#ringnum"), fg = $("#ringfg"), ring = $(".ring");
+  if (num) num.textContent = Math.ceil(left / 1000);
+  if (fg) fg.style.strokeDashoffset = String(276.46 * (1 - left / (H.dur * 1000)));
+  if (ring) ring.classList.toggle("low", left <= 5000);
+  if (left <= 0) endQuestion();
+}
+function endQuestion() {
+  if (H.phase !== "question") return;
+  clearInterval(H.timer);
+  const q = curQ(), T = H.dur * 1000;
+  H.players.forEach(p => {
+    p.prevRank = p.rank;
+    const a = H.answers.get(p.id);
+    p.answered = !!a; p.ok = !!a && a.c === q.a; p.gain = 0;
+    if (p.ok) {
+      p.gain = Math.round(500 + 500 * Math.max(0, 1 - a.ms / T));   // 答對基本 500 分＋速度加分最多 500 分
+      p.time += a.ms;
+    }
+    p.score += p.gain;
+  });
+  rankPlayers();
+  H.phase = "reveal";
+  broadcast();
+  renderHost();
+}
+function rankPlayers() {
+  const arr = sorted();
+  arr.forEach((p, i) => p.rank = i + 1);
+}
+function sorted() {
+  return [...H.players.values()].sort((a, b) => b.score - a.score || a.time - b.time || a.name.localeCompare(b.name, "zh-Hant"));
+}
+function showBoard() { H.phase = "board"; broadcast(); renderHost(); }
+function showPodium() { H.phase = "final"; rankPlayers(); broadcast(); renderHost(); }
+function backToLobby() {
+  clearInterval(H.timer);
+  H.phase = "lobby"; H.qi = -1; H.game = null;
+  H.players.forEach(p => Object.assign(p, { score: 0, time: 0, gain: 0, rank: 0, prevRank: 0 }));
+  broadcast(); renderHost();
+}
+
+/* ---- simulated players (for rehearsal) ---- */
+function addBots(n) {
+  for (let i = 0; i < n; i++) {
+    const id = "bot-" + rid();
+    const base = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
+    H.players.set(id, newPlayer(id, uniqueName(base), true));
+  }
+  refreshCounts();
+}
+function scheduleBots() {
+  const qi = H.qi, q = curQ(), T = H.dur * 1000;
+  H.players.forEach(p => {
+    if (!p.bot) return;
+    const delay = 1200 + Math.random() * T * 0.8;
+    const c = Math.random() < 0.65 ? q.a : Math.floor(Math.random() * q.opts.length);
+    setTimeout(() => handleAnswer(p.id, qi, c), delay);
+  });
+}
+
+/* ---- host rendering ---- */
+function topbarHTML() {
+  const total = H.game ? H.game.length : normalizeQs(H.qs).length;
+  const prog = H.phase === "lobby" ? `共 ${total} 題` : H.phase === "final" ? "比賽結束" : `第 ${H.qi + 1} / ${H.game.length} 題`;
+  return `<div class="topbar">
+    <div class="brand">即時<b>搶答</b></div>
+    <div class="pill">加入碼 <strong>${H.code}</strong></div>
+    <div class="pill">${prog}</div>
+    <div class="sp"></div>
+    <div class="pill">👥 <span id="pcount">${onlineCount()}</span> 人在線</div>
+    <button class="iconbtn" onclick="toggleFS()">⛶ 全螢幕</button>
+  </div><div id="banner"></div>`;
+}
+function renderBanner() {
+  const el = $("#banner"); if (!el) return;
+  let html = "";
+  if (H.status === "nolib") html = `<div class="banner">無法載入連線元件（PeerJS）。請確認電腦可以上網後重新整理頁面。</div>`;
+  else if (H.status === "error") html = `<div class="banner">連線伺服器發生問題（${esc(H.err)}），已連上的學員通常不受影響；若學員無法加入，請重新整理頁面。</div>`;
+  else if (H.status === "connecting") html = `<div class="banner warn">正在建立連線房間…</div>`;
+  else if (location.protocol === "file:" && H.phase === "lobby") html = `<div class="banner warn">目前是從電腦本機開啟，學員手機無法開啟這個網址。請先把此檔案放到網路上（例如 GitHub Pages、Netlify），再從那個網址開啟主持人頁。</div>`;
+  el.innerHTML = html;
+}
+
+function renderHost() {
+  app.className = "host";
+  let main = "";
+  if (H.phase === "lobby") main = lobbyHTML();
+  else if (H.phase === "question") main = questionHTML(false);
+  else if (H.phase === "reveal") main = questionHTML(true);
+  else if (H.phase === "board") main = boardHTML();
+  else if (H.phase === "final") main = podiumHTML();
+  app.innerHTML = topbarHTML() + `<main class="stage">${main}</main>`;
+  renderBanner();
+  if (H.phase === "lobby") { drawQR(); renderPlayerChips(); }
+  if (H.phase === "question") tick();
+  if (H.phase === "final") confetti();
+  else { const c = $(".confetti"); if (c) c.remove(); }
+}
+
+function lobbyHTML() {
+  const durs = [10, 15, 20, 30, 45, 60];
+  return `<div class="lobby">
+    <div class="joincard">
+      <h2>手機掃描加入比賽</h2>
+      <div id="qr"></div>
+      <div class="muted" style="color:#56608a;font-size:14px">或輸入加入碼</div>
+      <div class="code">${H.code}</div>
+      <div class="url">${esc(joinURL())}</div>
+    </div>
+    <div class="lobby-right">
+      <h1>掃碼、取名字，<br><span>準備搶答！</span></h1>
+      <p class="sub muted">答得越快、分數越高。答對得 500 分起，最快可拿 1,000 分。點名字可移除該學員。</p>
+      <div class="plist" id="plist"></div>
+      <div class="settings">
+        <label class="muted">每題秒數
+          <select onchange="H.dur=+this.value;LS.set('lq7_dur',H.dur)">
+            ${durs.map(d => `<option value="${d}" ${d === H.dur ? "selected" : ""}>${d} 秒</option>`).join("")}
+          </select></label>
+        <button class="btn ghost" onclick="openEditor()">✎ 編輯題目</button>
+        <button class="btn ghost" onclick="addBots(5)">＋ 模擬學員 ×5</button>
+        <div style="flex:1"></div>
+        <button class="btn" id="startBtn" data-primary onclick="startGame()">開始比賽 ▶</button>
+      </div>
+    </div>
+  </div>`;
+}
+function renderPlayerChips() {
+  const el = $("#plist"); if (!el) return;
+  const ps = [...H.players.values()];
+  el.innerHTML = ps.length
+    ? ps.map(p => `<button class="chip ${p.online ? "" : "off"}" title="點擊移除" onclick="kick('${esc(p.id)}')">${esc(p.name)}${p.bot ? " 🤖" : ""}</button>`).join("")
+    : `<div class="empty">等待學員加入中…</div>`;
+  const b = $("#startBtn"); if (b) b.disabled = ps.length === 0;
+}
+function kick(id) {
+  const p = H.players.get(id); if (!p) return;
+  if (!confirm(`要移除「${p.name}」嗎？`)) return;
+  if (p.conn && p.conn.open) { try { p.conn.send({ t: "state", phase: "kicked" }); } catch (e) {} }
+  H.players.delete(id);
+  refreshCounts();
+}
+function refreshCounts() {
+  const pc = $("#pcount"); if (pc) pc.textContent = onlineCount();
+  if (H.phase === "lobby") renderPlayerChips();
+  if (H.phase === "question") { const a = $("#anscount"); if (a) a.innerHTML = `已作答 <b>${H.answers.size}</b> / ${onlineCount()}`; }
+}
+function drawQR() {
+  const el = $("#qr"); if (!el) return;
+  if (typeof QRCode === "undefined") { el.innerHTML = `<div style="padding:40px;color:#56608a">QR Code 元件載入失敗，請讓學員輸入下方網址</div>`; return; }
+  new QRCode(el, { text: joinURL(), width: 320, height: 320, colorDark: "#0e1530", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+}
+
+function questionHTML(reveal) {
+  const q = curQ();
+  const counts = q.opts.map((_, i) => [...H.answers.values()].filter(a => a.c === i).length);
+  const max = Math.max(1, ...counts);
+  const opts = q.opts.map((t, i) => {
+    const cls = reveal ? (i === q.a ? "win" : "dim") : "";
+    return `<div class="opt c${i} ${cls}"><span class="sh">${SHAPES[i]}</span><span>${esc(t)}</span>
+      ${reveal ? `<span class="cnt">${i === q.a ? "✓ " : ""}${counts[i]} 人</span><div class="bar" style="width:${counts[i] / max * 100}%"></div>` : ""}</div>`;
+  }).join("");
+  const correctN = counts[q.a], answered = H.answers.size;
+  return `<div class="qhead">
+      <div style="flex:1"><div class="qnum">QUESTION ${H.qi + 1}</div><div class="qtext">${esc(q.q)}</div></div>
+      ${reveal ? "" : `<div class="ring"><svg viewBox="0 0 100 100"><circle class="bgc" cx="50" cy="50" r="44"/><circle id="ringfg" class="fgc" cx="50" cy="50" r="44" stroke-dasharray="276.46" stroke-dashoffset="0"/></svg><div class="num" id="ringnum">${H.dur}</div></div>`}
+    </div>
+    <div class="opts">${opts}</div>
+    <div class="foot">
+      ${reveal
+        ? `<div class="anscount" style="margin-right:auto">答對 <b>${correctN}</b> 人 / 作答 ${answered} 人</div>
+           <button class="btn" data-primary onclick="showBoard()">查看即時排名 ▶</button>`
+        : `<div class="anscount" id="anscount" style="margin-right:auto">已作答 <b>${answered}</b> / ${onlineCount()}</div>
+           <button class="btn ghost" data-primary onclick="endQuestion()">提早結束作答</button>`}
+    </div>`;
+}
+
+function boardHTML() {
+  const arr = sorted().slice(0, 10);
+  const top = Math.max(1, arr[0] ? arr[0].score : 1);
+  const last = H.qi >= H.game.length - 1;
+  const rows = arr.map((p, i) => {
+    let mv = "";
+    if (p.prevRank && p.rank < p.prevRank) mv = `<span class="mv up">▲${p.prevRank - p.rank}</span>`;
+    else if (p.prevRank && p.rank > p.prevRank) mv = `<span class="mv dn">▼${p.rank - p.prevRank}</span>`;
+    else mv = `<span class="mv muted">–</span>`;
+    return `<div class="row" style="animation-delay:${i * 0.06}s">
+      <div class="fill" style="width:${p.score / top * 100}%"></div>
+      <div class="rk">#${p.rank}</div>${mv}
+      <div class="nm">${esc(p.name)}</div>
+      <div class="gain">${p.gain ? "+" + fmt(p.gain) : ""}</div>
+      <div class="sc">${fmt(p.score)}</div></div>`;
+  }).join("");
+  return `<div class="board-title">第 ${H.qi + 1} 題後 · 即時排名</div>
+    <div class="rows">${rows || `<div class="empty">尚無學員</div>`}</div>
+    <div class="foot">
+      <span class="muted" style="margin-right:auto">共 ${H.players.size} 人參賽${H.players.size > 10 ? "，顯示前 10 名" : ""}</span>
+      ${last
+        ? `<button class="btn" data-primary onclick="showPodium()">🏆 揭曉前三名</button>`
+        : `<button class="btn" data-primary onclick="nextQuestion()">下一題 ▶</button>`}
+    </div>`;
+}
+
+function podiumHTML() {
+  const arr = sorted();
+  const slot = (p, n) => p ? `<div class="pcol p${n}">
+      <div class="pcard">${n === 1 ? `<div class="crown">👑</div>` : ""}
+        <div class="medal">${n}</div>
+        <div class="pname">${esc(p.name)}</div>
+        <div class="pscore">${fmt(p.score)} 分</div></div>
+      <div class="pillar">${n}</div></div>` : `<div class="pcol p${n}" style="visibility:hidden"></div>`;
+  return `<div class="podium-wrap">
+      <div class="podium-title">🏆 <span>冠軍排行榜</span> 🏆</div>
+      <div class="podium">${slot(arr[1], 2)}${slot(arr[0], 1)}${slot(arr[2], 3)}</div>
+    </div>
+    <div class="foot">
+      <button class="btn ghost" onclick="showFullRank()">完整排名</button>
+      <button class="btn ghost" onclick="if(confirm('回到等待室並清空分數？'))backToLobby()">再玩一次</button>
+    </div>`;
+}
+function showFullRank() {
+  const arr = sorted();
+  modal.innerHTML = `<div class="modal" onclick="if(event.target===this)closeModal()"><div class="mbox">
+    <div class="mhead"><h3>完整排名（${arr.length} 人）</h3><button class="iconbtn" onclick="closeModal()">✕</button></div>
+    <div class="mbody">${arr.map(p => `<div class="row" style="grid-template-columns:64px 1fr 130px;animation:none">
+      <div class="rk">#${p.rank}</div><div class="nm">${esc(p.name)}</div><div class="sc">${fmt(p.score)}</div></div>`).join("")}</div>
+  </div></div>`;
+}
+function confetti() {
+  if ($(".confetti")) return;
+  const colors = ["#ffd166", "#e5484d", "#3e63dd", "#2f9e68", "#ffffff", "#e8a317"];
+  const c = document.createElement("div"); c.className = "confetti";
+  c.innerHTML = Array.from({ length: 90 }, () => {
+    const l = Math.random() * 100, d = 3 + Math.random() * 4, dl = 1.6 + Math.random() * 4;
+    return `<i style="left:${l}%;background:${colors[Math.floor(Math.random() * colors.length)]};animation-duration:${d}s;animation-delay:${dl}s;transform:rotate(${Math.random() * 360}deg)"></i>`;
+  }).join("");
+  document.body.appendChild(c);
+}
+function toggleFS() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+  else document.exitFullscreen?.();
+}
+function closeModal() { modal.innerHTML = ""; }
+
+/* ---- question editor ---- */
+let ED = null;
+function openEditor() {
+  ED = JSON.parse(JSON.stringify(H.qs));
+  ED.forEach(q => { while (q.opts.length < 4) q.opts.push(""); });
+  drawEditor();
+}
+function drawEditor(err = "") {
+  modal.innerHTML = `<div class="modal"><div class="mbox">
+    <div class="mhead"><h3>編輯題目（${ED.length} 題）</h3><button class="iconbtn" onclick="closeModal()">✕</button></div>
+    <div class="mbody">${ED.map((q, qi) => `<div class="qed">
+      <div class="qh"><span>第 ${qi + 1} 題</span>
+        <button class="iconbtn" onclick="edMove(${qi},-1)" ${qi === 0 ? "disabled" : ""}>↑</button>
+        <button class="iconbtn" onclick="edMove(${qi},1)" ${qi === ED.length - 1 ? "disabled" : ""}>↓</button>
+        <button class="iconbtn" onclick="edDel(${qi})">刪除</button></div>
+      <textarea placeholder="輸入題目" oninput="ED[${qi}].q=this.value">${esc(q.q)}</textarea>
+      <div class="oed">${q.opts.map((o, oi) => `<label class="${q.a === oi ? "ok" : ""}">
+        <span class="sw" style="background:var(--o${oi})">${SHAPES[oi]}</span>
+        <input type="text" value="${esc(o)}" placeholder="選項 ${oi + 1}${oi > 1 ? "（可留空）" : ""}" oninput="ED[${qi}].opts[${oi}]=this.value">
+        <input type="radio" name="a${qi}" ${q.a === oi ? "checked" : ""} title="設為正確答案" onchange="ED[${qi}].a=${oi};drawEditor()">
+      </label>`).join("")}</div>
+      <div class="muted" style="font-size:13px;margin-top:6px">右側圓點＝正確答案</div>
+    </div>`).join("")}
+    <button class="btn ghost" onclick="ED.push({q:'',opts:['','','',''],a:0});drawEditor()">＋ 新增題目</button>
+    </div>
+    <div class="mfoot"><span class="err">${esc(err)}</span>
+      <button class="btn ghost" onclick="if(confirm('還原為範例題目？')){ED=JSON.parse(JSON.stringify(DEFAULT_QS));drawEditor()}">還原範例</button>
+      <button class="btn" onclick="saveEditor()">儲存</button></div>
+  </div></div>`;
+}
+function edMove(i, d) { const t = ED[i]; ED[i] = ED[i + d]; ED[i + d] = t; drawEditor(); }
+function edDel(i) { if (ED.length <= 1) return; ED.splice(i, 1); drawEditor(); }
+function saveEditor() {
+  for (let i = 0; i < ED.length; i++) {
+    const q = ED[i];
+    if (!q.q.trim()) return drawEditor(`第 ${i + 1} 題沒有題目文字`);
+    if (q.opts.filter(o => o.trim()).length < 2) return drawEditor(`第 ${i + 1} 題至少需要 2 個選項`);
+    if (!String(q.opts[q.a] || "").trim()) return drawEditor(`第 ${i + 1} 題的正確答案選項是空白的`);
+  }
+  H.qs = ED; LS.set("lq7_qs", H.qs); closeModal(); renderHost();
+}
+
+/* ============================================================
+   PLAYER
+   ============================================================ */
+let P, retryT = null, pTimer = null;
+function startPlayer(code) {
+  let id = LS.get("lq7_pid_" + code, null);
+  if (!id) { id = rid(); LS.set("lq7_pid_" + code, id); }
+  P = { code, id, name: LS.get("lq7_name", ""), peer: null, conn: null, state: null, joined: false, status: "idle", recvAt: 0 };
+  renderPlayer();
+}
+function joinGame() {
+  const v = ($("#nameIn")?.value || "").replace(/\s+/g, " ").trim().slice(0, 12);
+  if (!v) { $("#nameIn")?.focus(); return; }
+  P.name = v; LS.set("lq7_name", v);
+  P.joined = true; P.status = "connecting";
+  renderPlayer();
+  openPlayerPeer();
+}
+function openPlayerPeer() {
+  if (typeof Peer === "undefined") { P.status = "nolib"; renderPlayer(); return; }
+  if (!P.peer || P.peer.destroyed) {
+    P.peer = new Peer({ debug: 0 });
+    P.peer.on("open", connectToHost);
+    P.peer.on("disconnected", () => { try { if (!P.peer.destroyed) P.peer.reconnect(); } catch (e) {} });
+    P.peer.on("error", err => {
+      if (err.type === "peer-unavailable") P.status = "nohost";
+      else if (P.status !== "ok") P.status = "neterr";
+      if (!P.state) renderPlayer();
+      retryLater();
+    });
+  } else if (P.peer.open) connectToHost();
+  else retryLater();
+}
+function connectToHost() {
+  if (P.conn && P.conn.open) return;
+  const conn = P.peer.connect(PREFIX + P.code, { reliable: true });
+  P.conn = conn;
+  conn.on("open", () => { P.status = "ok"; conn.send({ t: "join", id: P.id, name: P.name }); });
+  conn.on("data", d => {
+    if (!d || d.t !== "state") return;
+    P.state = d; P.recvAt = Date.now();
+    renderPlayer();
+  });
+  conn.on("close", () => { if (P.status === "kicked") return; P.status = "reconnecting"; renderPlayer(); retryLater(); });
+  conn.on("error", () => retryLater());
+}
+function retryLater() {
+  clearTimeout(retryT);
+  retryT = setTimeout(() => { if (P.status === "kicked" || (P.conn && P.conn.open)) return; openPlayerPeer(); }, 2500);
+}
+function answer(i) {
+  const s = P.state;
+  if (!s || s.phase !== "question" || s.mine != null || !P.conn || !P.conn.open) return;
+  P.conn.send({ t: "answer", q: s.qi, c: i });
+  s.mine = i;
+  if (navigator.vibrate) navigator.vibrate(30);
+  renderPlayer();
+}
+
+function renderPlayer() {
+  app.className = "player";
+  clearInterval(pTimer);
+  const s = P.state;
+  const head = s ? `<div class="phead"><span>👤 <b>${esc(s.name)}</b></span><span>${s.phase === "lobby" ? "" : `第 ${Math.max(1, s.qi + 1)} / ${s.total} 題 · `}<b>${fmt(s.score)}</b> 分</span></div>` : "";
+  let body = "";
+
+  if (!P.joined) {
+    body = `<div class="center">
+      <div class="logo">即時<b>搶答</b></div>
+      <div class="muted">房間 ${esc(P.code)}</div>
+      <input id="nameIn" class="field" maxlength="12" placeholder="輸入你的名字" value="${esc(P.name)}" onkeydown="if(event.key==='Enter')joinGame()">
+      <button class="btn" onclick="joinGame()">加入比賽</button>
+      <div class="netnote">答得越快分數越高，祝你好運！</div></div>`;
+  } else if (P.status === "nolib") {
+    body = `<div class="center"><div class="big">📡</div><div class="verdict">無法載入連線元件</div><div class="muted">請確認手機有網路，再重新整理頁面。</div></div>`;
+  } else if (!s || (P.status !== "ok" && !s)) {
+    const msg = P.status === "nohost" ? "找不到這個比賽房間，主持人可能還沒開啟，或加入碼已更換。持續重試中…"
+      : P.status === "neterr" ? "連線不太順，持續重試中…（若一直失敗，可改用手機行動網路）"
+      : "連線中…";
+    body = `<div class="center"><div class="dots"><i></i><i></i><i></i></div><div class="muted">${msg}</div></div>`;
+  } else if (s.phase === "kicked") {
+    P.status = "kicked";
+    body = `<div class="center"><div class="big">👋</div><div class="verdict">你已被主持人移出比賽</div></div>`;
+  } else if (s.phase === "lobby") {
+    body = `<div class="center"><div class="big">🎉</div><div class="verdict">已加入！</div>
+      <div class="muted">看大螢幕，等待主持人開始比賽</div><div class="dots"><i></i><i></i><i></i></div>
+      <div class="muted" style="font-size:14px">目前 ${s.n} 人參加</div></div>`;
+  } else if (s.phase === "question") {
+    if (s.mine == null) {
+      body = `<div class="tbar"><i id="tb"></i></div><div class="pq">${esc(s.q)}</div>
+        <div class="popts">${s.opts.map((o, i) => `<button class="popt c${i}" onclick="answer(${i})"><span>${SHAPES[i]}</span><span>${esc(o)}</span></button>`).join("")}</div>`;
+    } else {
+      body = `<div class="tbar"><i id="tb"></i></div><div class="center"><div class="big">✅</div><div class="verdict">答案已送出</div>
+        <div class="chosen popt c${s.mine}">${SHAPES[s.mine]}　${esc(s.opts[s.mine])}</div>
+        <div class="muted">等待公布答案…</div></div>`;
+    }
+    const tickP = () => {
+      const left = Math.max(0, s.left - (Date.now() - P.recvAt));
+      const tb = $("#tb"); if (tb) tb.style.width = (left / s.dur * 100) + "%";
+      if (left <= 0) clearInterval(pTimer);
+    };
+    setTimeout(tickP, 0); pTimer = setInterval(tickP, 100);
+  } else if (s.phase === "reveal") {
+    const verdict = s.ok ? `<div class="big">🎯</div><div class="verdict ok">答對了！ +${fmt(s.gain)}</div>`
+      : s.answered ? `<div class="big">😵</div><div class="verdict bad">答錯了</div>`
+      : `<div class="big">⏰</div><div class="verdict bad">時間到，未作答</div>`;
+    body = `<div class="center">${verdict}
+      <div class="chosen popt c${s.correct}">正確答案：${SHAPES[s.correct]}　${esc(s.opts[s.correct])}</div>
+      <div class="stat"><div><b>#${s.rank}</b><span>目前名次</span></div><div><b>${fmt(s.score)}</b><span>總分</span></div></div></div>`;
+  } else if (s.phase === "board") {
+    body = `<div class="center"><div class="big">📊</div><div class="verdict">目前第 ${s.rank} 名</div>
+      <div class="stat"><div><b>${fmt(s.score)}</b><span>總分</span></div><div><b>${s.n}</b><span>參賽人數</span></div></div>
+      <div class="muted">看大螢幕的即時排名！</div></div>`;
+  } else if (s.phase === "final") {
+    const medal = ["🥇", "🥈", "🥉"][s.rank - 1] || "🎖️";
+    body = `<div class="center"><div class="big">${medal}</div>
+      <div class="verdict">${s.rank <= 3 ? `恭喜獲得第 ${s.rank} 名！` : `最終第 ${s.rank} 名`}</div>
+      <div class="stat"><div><b>${fmt(s.score)}</b><span>最終總分</span></div><div><b>${s.n}</b><span>參賽人數</span></div></div>
+      <div class="muted">謝謝參與！</div></div>`;
+  }
+  if (s && P.status === "reconnecting") body += `<div class="netnote">⚠️ 連線中斷，正在重新連線…</div>`;
+  app.innerHTML = head + body;
+}
+
+/* ---- 啟動：有 ?join= 就是學員頁，否則是主持人頁 ---- */
+const params = new URLSearchParams(location.search);
+if (params.get("join")) startPlayer(params.get("join").replace(/\D/g, "").slice(0, 6));
+else startHost();
+</script>
+</body>
+</html>
