@@ -177,15 +177,25 @@ input,textarea,select{font:inherit;color:inherit}
 <div id="app"></div>
 <div id="modal"></div>
 
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 /* ============================================================
    即時搶答｜主持人頁＋學員頁（同一檔案）
    - 直接開啟 = 主持人畫面
    - 網址帶 ?join=六位數代碼 = 學員畫面（QR Code 會帶這個）
-   連線：PeerJS（WebRTC 點對點），不需後端與帳號
+   連線：公開 MQTT 轉播伺服器（WebSocket），不需後端與帳號，
+         任何網路（Wi‑Fi、4G/5G、LINE 內建瀏覽器）都能連
    ============================================================ */
+const params = new URLSearchParams(location.search);
+const BROKERS = [
+  "wss://broker.emqx.io:8084/mqtt",
+  "wss://broker.hivemq.com:8884/mqtt",
+  "wss://test.mosquitto.org:8081/mqtt"
+];
+const BROKER_OVERRIDE = params.get("broker");          // 測試用：指定自己的伺服器
+const brokerURL = i => BROKER_OVERRIDE || BROKERS[i % BROKERS.length];
+const TOPIC = code => "lq7quiz-v2/" + code + "/";
 
 const DEFAULT_QS = [
   { q: "台灣最高的山是哪一座？", opts: ["雪山", "玉山", "合歡山", "阿里山"], a: 1 },
@@ -196,7 +206,6 @@ const DEFAULT_QS = [
   { q: "「三人行，必有我師焉」出自哪本書？", opts: ["論語", "孟子", "大學", "中庸"], a: 0 },
   { q: "一大氣壓下，水的沸點是幾度 C？", opts: ["90", "100", "110", "120"], a: 1 }
 ];
-const PREFIX = "lq7-live-quiz-";
 const SHAPES = ["▲", "◆", "●", "■"];
 const BOT_NAMES = ["小明","阿華","佩佩","Kevin","小芸","大雄","Amy","阿傑","思思","Leo","小魚","Tony"];
 
@@ -220,9 +229,10 @@ function startHost() {
     qs: LS.get("lq7_qs", DEFAULT_QS), dur: LS.get("lq7_dur", 20),
     players: new Map(), phase: "lobby", qi: -1, game: null,
     answers: new Map(), qStart: 0, timer: null,
-    code: "", peer: null, status: "connecting", err: ""
+    code: String(Math.floor(100000 + Math.random() * 900000)),
+    cli: null, bi: 0, status: "connecting", err: ""
   };
-  connectHostPeer();
+  connectHost();
   renderHost();
   document.addEventListener("keydown", e => {
     if (modal.innerHTML || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
@@ -233,55 +243,65 @@ function startHost() {
   });
 }
 
-function connectHostPeer() {
-  H.code = String(Math.floor(100000 + Math.random() * 900000));
-  if (typeof Peer === "undefined") { H.status = "nolib"; return; }
-  const peer = new Peer(PREFIX + H.code, { debug: 0 });
-  H.peer = peer;
-  peer.on("open", () => { H.status = "ready"; if (H.phase === "lobby") renderHost(); else renderBanner(); });
-  peer.on("connection", conn => {
-    conn.on("data", d => onHostData(conn, d));
-    conn.on("close", () => {
-      const p = H.players.get(conn.pid);
-      if (p && p.conn === conn) { p.online = false; p.conn = null; refreshCounts(); }
-    });
+function connectHost() {
+  if (typeof mqtt === "undefined") { H.status = "nolib"; return; }
+  const cli = mqtt.connect(brokerURL(H.bi), { clientId: "h_" + rid(), clean: true, keepalive: 20, reconnectPeriod: 2000, connectTimeout: 8000 });
+  H.cli = cli;
+  let ok = false;
+  // 第一台伺服器連不上，就自動換下一台（只在等待室階段換，QR Code 會跟著更新）
+  const failT = setTimeout(() => {
+    if (ok || BROKER_OVERRIDE || H.phase !== "lobby") return;
+    try { cli.end(true); } catch (e) {}
+    if (H.bi < BROKERS.length - 1) { H.bi++; connectHost(); renderHost(); }
+    else { H.status = "error"; H.err = "無法連上轉播伺服器"; renderBanner(); }
+  }, 9000);
+  cli.on("connect", () => {
+    ok = true; clearTimeout(failT);
+    cli.subscribe(TOPIC(H.code) + "up", { qos: 1 });
+    const was = H.status; H.status = "ready";
+    if (H.phase === "lobby" && was !== "ready") renderHost(); else renderBanner();
+    broadcast();
   });
-  peer.on("disconnected", () => { try { if (!peer.destroyed) peer.reconnect(); } catch (e) {} });
-  peer.on("error", err => {
-    if (err.type === "unavailable-id" && H.phase === "lobby") { peer.destroy(); connectHostPeer(); renderHost(); return; }
-    if (err.type === "peer-unavailable") return;
-    H.status = "error"; H.err = err.type || String(err);
-    renderBanner();
+  cli.on("offline", () => { if (ok) { H.status = "reconnecting"; renderBanner(); } });
+  cli.on("message", (t, buf) => {
+    let d; try { d = JSON.parse(buf.toString()); } catch (e) { return; }
+    onHostData(d);
   });
 }
 
 function joinURL() {
   const base = location.href.split("#")[0].split("?")[0];
-  return base + "?join=" + H.code;
+  let u = base + "?join=" + H.code + "&b=" + H.bi;
+  if (BROKER_OVERRIDE) u += "&broker=" + encodeURIComponent(BROKER_OVERRIDE);
+  return u;
 }
 
-function onHostData(conn, d) {
+function onHostData(d) {
   if (!d || typeof d !== "object") return;
+  const id = String(d.id || "").slice(0, 40);
+  if (!id || id.startsWith("bot-")) return;
   if (d.t === "join") {
-    const id = String(d.id || "").slice(0, 40);
-    if (!id) return;
     let p = H.players.get(id);
     if (!p) {
       let name = String(d.name || "").replace(/\s+/g, " ").trim().slice(0, 12) || "玩家";
       p = newPlayer(id, uniqueName(name));
       H.players.set(id, p);
     }
-    if (p.conn && p.conn !== conn) { try { p.conn.close(); } catch (e) {} }
-    p.conn = conn; p.online = true; conn.pid = id;
+    p.online = true;
     sendState(p);
     refreshCounts();
+  } else if (d.t === "leave") {
+    const p = H.players.get(id);
+    if (p) { p.online = false; refreshCounts(); }
   } else if (d.t === "answer") {
-    handleAnswer(conn.pid, d.q, d.c);
+    const p = H.players.get(id);
+    if (p && !p.online) { p.online = true; refreshCounts(); }
+    handleAnswer(id, d.q, d.c);
   }
 }
 
 function newPlayer(id, name, bot = false) {
-  return { id, name, bot, score: 0, time: 0, gain: 0, ok: false, answered: false, rank: 0, prevRank: 0, online: true, conn: null };
+  return { id, name, bot, score: 0, time: 0, gain: 0, ok: false, answered: false, rank: 0, prevRank: 0, online: true };
 }
 function uniqueName(name) {
   const used = new Set([...H.players.values()].map(p => p.name));
@@ -299,9 +319,13 @@ function normalizeQs(qs) {
   }).filter(q => q.q && q.opts.length >= 2 && q.a >= 0);
 }
 
+function hostPublish(pid, obj) {
+  if (!H.cli || !H.cli.connected) return;
+  try { H.cli.publish(TOPIC(H.code) + "p/" + pid, JSON.stringify(obj), { qos: 1 }); } catch (e) {}
+}
 function sendState(p) {
-  if (p.bot || !p.conn || !p.conn.open) return;
-  try { p.conn.send(stateFor(p)); } catch (e) {}
+  if (p.bot) return;
+  hostPublish(p.id, stateFor(p));
 }
 function broadcast() { H.players.forEach(sendState); }
 
@@ -431,8 +455,9 @@ function topbarHTML() {
 function renderBanner() {
   const el = $("#banner"); if (!el) return;
   let html = "";
-  if (H.status === "nolib") html = `<div class="banner">無法載入連線元件（PeerJS）。請確認電腦可以上網後重新整理頁面。</div>`;
-  else if (H.status === "error") html = `<div class="banner">連線伺服器發生問題（${esc(H.err)}），已連上的學員通常不受影響；若學員無法加入，請重新整理頁面。</div>`;
+  if (H.status === "nolib") html = `<div class="banner">無法載入連線元件。請確認電腦可以上網後重新整理頁面。</div>`;
+  else if (H.status === "error") html = `<div class="banner">${esc(H.err)}。請確認電腦網路正常後重新整理頁面。</div>`;
+  else if (H.status === "reconnecting") html = `<div class="banner warn">網路短暫中斷，正在自動重新連線…（比賽資料都還在）</div>`;
   else if (H.status === "connecting") html = `<div class="banner warn">正在建立連線房間…</div>`;
   else if (location.protocol === "file:" && H.phase === "lobby") html = `<div class="banner warn">目前是從電腦本機開啟，學員手機無法開啟這個網址。請先把此檔案放到網路上（例如 GitHub Pages、Netlify），再從那個網址開啟主持人頁。</div>`;
   el.innerHTML = html;
@@ -492,7 +517,7 @@ function renderPlayerChips() {
 function kick(id) {
   const p = H.players.get(id); if (!p) return;
   if (!confirm(`要移除「${p.name}」嗎？`)) return;
-  if (p.conn && p.conn.open) { try { p.conn.send({ t: "state", phase: "kicked" }); } catch (e) {} }
+  if (!p.bot) hostPublish(p.id, { t: "state", phase: "kicked" });
   H.players.delete(id);
   refreshCounts();
 }
@@ -643,11 +668,12 @@ function saveEditor() {
 /* ============================================================
    PLAYER
    ============================================================ */
-let P, retryT = null, pTimer = null;
+let P, pTimer = null;
 function startPlayer(code) {
   let id = LS.get("lq7_pid_" + code, null);
   if (!id) { id = rid(); LS.set("lq7_pid_" + code, id); }
-  P = { code, id, name: LS.get("lq7_name", ""), peer: null, conn: null, state: null, joined: false, status: "idle", recvAt: 0 };
+  const bi = Math.max(0, parseInt(params.get("b") || "0", 10) || 0);
+  P = { code, id, bi, name: LS.get("lq7_name", ""), cli: null, state: null, joined: false, status: "idle", recvAt: 0, awaiting: false, joinT: null };
   renderPlayer();
 }
 function joinGame() {
@@ -656,44 +682,46 @@ function joinGame() {
   P.name = v; LS.set("lq7_name", v);
   P.joined = true; P.status = "connecting";
   renderPlayer();
-  openPlayerPeer();
+  connectPlayer();
 }
-function openPlayerPeer() {
-  if (typeof Peer === "undefined") { P.status = "nolib"; renderPlayer(); return; }
-  if (!P.peer || P.peer.destroyed) {
-    P.peer = new Peer({ debug: 0 });
-    P.peer.on("open", connectToHost);
-    P.peer.on("disconnected", () => { try { if (!P.peer.destroyed) P.peer.reconnect(); } catch (e) {} });
-    P.peer.on("error", err => {
-      if (err.type === "peer-unavailable") P.status = "nohost";
-      else if (P.status !== "ok") P.status = "neterr";
-      if (!P.state) renderPlayer();
-      retryLater();
-    });
-  } else if (P.peer.open) connectToHost();
-  else retryLater();
-}
-function connectToHost() {
-  if (P.conn && P.conn.open) return;
-  const conn = P.peer.connect(PREFIX + P.code, { reliable: true });
-  P.conn = conn;
-  conn.on("open", () => { P.status = "ok"; conn.send({ t: "join", id: P.id, name: P.name }); });
-  conn.on("data", d => {
+function connectPlayer() {
+  if (typeof mqtt === "undefined") { P.status = "nolib"; renderPlayer(); return; }
+  const base = TOPIC(P.code);
+  const cli = mqtt.connect(brokerURL(P.bi), {
+    clientId: "p_" + rid(), clean: true, keepalive: 20, reconnectPeriod: 2000, connectTimeout: 8000,
+    will: { topic: base + "up", payload: JSON.stringify({ t: "leave", id: P.id }), qos: 1, retain: false }
+  });
+  P.cli = cli;
+  cli.on("connect", () => {
+    if (P.status === "kicked") return;
+    cli.subscribe(base + "p/" + P.id, { qos: 1 }, () => sendJoin());
+  });
+  cli.on("offline", () => { if (P.status === "kicked") return; P.status = "reconnecting"; renderPlayer(); });
+  cli.on("message", (t, buf) => {
+    let d; try { d = JSON.parse(buf.toString()); } catch (e) { return; }
     if (!d || d.t !== "state") return;
-    P.state = d; P.recvAt = Date.now();
+    P.awaiting = false; clearTimeout(P.joinT);
+    P.state = d; P.recvAt = Date.now(); P.status = "ok";
+    if (d.phase === "kicked") { P.status = "kicked"; try { cli.end(true); } catch (e) {} }
     renderPlayer();
   });
-  conn.on("close", () => { if (P.status === "kicked") return; P.status = "reconnecting"; renderPlayer(); retryLater(); });
-  conn.on("error", () => retryLater());
 }
-function retryLater() {
-  clearTimeout(retryT);
-  retryT = setTimeout(() => { if (P.status === "kicked" || (P.conn && P.conn.open)) return; openPlayerPeer(); }, 2500);
+function sendJoin() {
+  if (!P.cli || !P.cli.connected || P.status === "kicked") return;
+  P.awaiting = true;
+  P.cli.publish(TOPIC(P.code) + "up", JSON.stringify({ t: "join", id: P.id, name: P.name }), { qos: 1 });
+  clearTimeout(P.joinT);
+  // 主持人沒回應：可能還沒開、或加入碼不對；每 4 秒重試
+  P.joinT = setTimeout(() => {
+    if (!P.awaiting) return;
+    if (!P.state) { P.status = "nohost"; renderPlayer(); }
+    sendJoin();
+  }, 4000);
 }
 function answer(i) {
   const s = P.state;
-  if (!s || s.phase !== "question" || s.mine != null || !P.conn || !P.conn.open) return;
-  P.conn.send({ t: "answer", q: s.qi, c: i });
+  if (!s || s.phase !== "question" || s.mine != null || !P.cli || !P.cli.connected) return;
+  P.cli.publish(TOPIC(P.code) + "up", JSON.stringify({ t: "answer", id: P.id, q: s.qi, c: i }), { qos: 1 });
   s.mine = i;
   if (navigator.vibrate) navigator.vibrate(30);
   renderPlayer();
@@ -715,13 +743,12 @@ function renderPlayer() {
       <div class="netnote">答得越快分數越高，祝你好運！</div></div>`;
   } else if (P.status === "nolib") {
     body = `<div class="center"><div class="big">📡</div><div class="verdict">無法載入連線元件</div><div class="muted">請確認手機有網路，再重新整理頁面。</div></div>`;
-  } else if (!s || (P.status !== "ok" && !s)) {
-    const msg = P.status === "nohost" ? "找不到這個比賽房間，主持人可能還沒開啟，或加入碼已更換。持續重試中…"
-      : P.status === "neterr" ? "連線不太順，持續重試中…（若一直失敗，可改用手機行動網路）"
+  } else if (!s) {
+    const msg = P.status === "nohost" ? "還找不到主持人的比賽房間，持續重試中…<br>請確認主持人畫面已開啟，或重新掃描 QR Code。"
+      : P.status === "reconnecting" ? "網路不太順，正在重新連線…"
       : "連線中…";
     body = `<div class="center"><div class="dots"><i></i><i></i><i></i></div><div class="muted">${msg}</div></div>`;
   } else if (s.phase === "kicked") {
-    P.status = "kicked";
     body = `<div class="center"><div class="big">👋</div><div class="verdict">你已被主持人移出比賽</div></div>`;
   } else if (s.phase === "lobby") {
     body = `<div class="center"><div class="big">🎉</div><div class="verdict">已加入！</div>
@@ -765,7 +792,6 @@ function renderPlayer() {
 }
 
 /* ---- 啟動：有 ?join= 就是學員頁，否則是主持人頁 ---- */
-const params = new URLSearchParams(location.search);
 if (params.get("join")) startPlayer(params.get("join").replace(/\D/g, "").slice(0, 6));
 else startHost();
 </script>
