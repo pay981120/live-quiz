@@ -239,7 +239,8 @@ function startHost() {
     qs: LS.get("lq7_qs", DEFAULT_QS), dur: LS.get("lq7_dur", 20),
     players: new Map(), phase: "lobby", qi: -1, game: null,
     answers: new Map(), qStart: 0, timer: null,
-    code: String(Math.floor(100000 + Math.random() * 900000)),
+    // 網址帶 ?room=六位數 可固定加入碼（方便把 QR Code 事先放進簡報）
+    code: /^\d{6}$/.test(params.get("room") || "") ? params.get("room") : String(Math.floor(100000 + Math.random() * 900000)),
     cli: null, bi: 0, status: "connecting", err: "", sound: LS.get("lq7_sound", true), lastSec: null, ac: null
   };
   connectHost();
@@ -542,7 +543,16 @@ function kick(id) {
 function refreshCounts() {
   const pc = $("#pcount"); if (pc) pc.textContent = onlineCount();
   if (H.phase === "lobby") renderPlayerChips();
-  if (H.phase === "question") { const a = $("#anscount"); if (a) a.innerHTML = `已作答 <b>${H.answers.size}</b> / ${onlineCount()}`; }
+  if (H.phase === "question") {
+    const a = $("#anscount"); if (a) a.innerHTML = `已作答 <b>${H.answers.size}</b> / ${onlineCount()}`;
+    const q = curQ(), counts = q.opts.map(() => 0);
+    H.answers.forEach(x => counts[x.c]++);
+    const max = Math.max(1, ...counts);
+    counts.forEach((n, i) => {
+      const c = document.querySelector(`[data-c="${i}"]`); if (c) c.textContent = n + " 人";
+      const b = document.querySelector(`[data-b="${i}"]`); if (b) b.style.width = (n / max * 100) + "%";
+    });
+  }
 }
 function drawQR() {
   const el = $("#qr"); if (!el) return;
@@ -556,8 +566,10 @@ function questionHTML(reveal) {
   const max = Math.max(1, ...counts);
   const opts = q.opts.map((t, i) => {
     const cls = reveal ? (i === q.a ? "win" : "dim") : "";
-    return `<div class="opt c${i} ${cls}"><span class="sh">${SHAPES[i]}</span><span>${esc(t)}</span>
-      ${reveal ? `<span class="cnt">${i === q.a ? "✓ " : ""}${counts[i]} 人</span><div class="bar" style="width:${counts[i] / max * 100}%"></div>` : ""}</div>`;
+    const tail = reveal
+      ? `<span class="cnt">${i === q.a ? "✓ " : ""}${counts[i]} 人</span><div class="bar" style="width:${counts[i] / max * 100}%"></div>`
+      : `<span class="cnt" data-c="${i}">${counts[i]} 人</span><div class="bar" data-b="${i}" style="width:${counts[i] / max * 100}%"></div>`;
+    return `<div class="opt c${i} ${cls}"><span class="sh">${SHAPES[i]}</span><span>${esc(t)}</span>${tail}</div>`;
   }).join("");
   const correctN = counts[q.a], answered = H.answers.size;
   return `<div class="qhead">
