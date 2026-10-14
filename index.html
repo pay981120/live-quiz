@@ -206,6 +206,7 @@ const BROKERS = [
 const BROKER_OVERRIDE = params.get("broker");          // 測試用：指定自己的伺服器
 const brokerURL = i => BROKER_OVERRIDE || BROKERS[i % BROKERS.length];
 const TOPIC = code => "lq7quiz-v2/" + code + "/";
+const SET = /^[\w-]{1,40}$/.test(params.get("set") || "") ? params.get("set") : null;   // ?set=題庫名 → 載入 題庫名.json
 
 const DEFAULT_QS = [
   { q: "台灣最高的山是哪一座？", opts: ["雪山", "玉山", "合歡山", "阿里山"], a: 1 },
@@ -245,6 +246,7 @@ function startHost() {
   };
   connectHost();
   renderHost();
+  if (SET) loadQuestionSet();
   document.addEventListener("keydown", e => {
     if (modal.innerHTML || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
     if (e.key === " " || e.key === "Enter" || e.key === "ArrowRight" || e.key === "PageDown") {
@@ -278,6 +280,17 @@ function connectHost() {
     let d; try { d = JSON.parse(buf.toString()); } catch (e) { return; }
     onHostData(d);
   });
+}
+
+function loadQuestionSet() {
+  fetch(SET + ".json", { cache: "no-store" })
+    .then(r => { if (!r.ok) throw r.status; return r.json(); })
+    .then(d => {
+      if (!Array.isArray(d) || !normalizeQs(d).length) throw "bad";
+      H.qs = d; H.setName = SET;
+      if (H.phase === "lobby") renderHost(); else renderBanner();
+    })
+    .catch(() => { H.setErr = true; renderBanner(); });
 }
 
 function joinURL() {
@@ -465,6 +478,7 @@ function topbarHTML() {
     <div class="brand">即時<b>搶答</b></div>
     <div class="pill">加入碼 <strong>${H.code}</strong></div>
     <div class="pill">${prog}</div>
+    ${H.setName ? `<div class="pill">📚 題庫 ${esc(H.setName)}</div>` : ""}
     <div class="sp"></div>
     <div class="pill">👥 <span id="pcount">${onlineCount()}</span> 人在線</div>
     <button class="iconbtn" id="sndBtn" onclick="toggleSound()">${H.sound ? "🔊 音效開" : "🔇 音效關"}</button>
@@ -477,6 +491,7 @@ function renderBanner() {
   if (H.status === "nolib") html = `<div class="banner">無法載入連線元件。請確認電腦可以上網後重新整理頁面。</div>`;
   else if (H.status === "error") html = `<div class="banner">${esc(H.err)}。請確認電腦網路正常後重新整理頁面。</div>`;
   else if (H.status === "reconnecting") html = `<div class="banner warn">網路短暫中斷，正在自動重新連線…（比賽資料都還在）</div>`;
+  else if (H.setErr) html = `<div class="banner">題庫「${esc(SET)}.json」載入失敗，目前顯示的是本機儲存的題目。請檢查網址或重新整理。</div>`;
   else if (H.status === "connecting") html = `<div class="banner warn">正在建立連線房間…</div>`;
   else if (location.protocol === "file:" && H.phase === "lobby") html = `<div class="banner warn">目前是從電腦本機開啟，學員手機無法開啟這個網址。請先把此檔案放到網路上（例如 GitHub Pages、Netlify），再從那個網址開啟主持人頁。</div>`;
   el.innerHTML = html;
