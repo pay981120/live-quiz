@@ -246,7 +246,7 @@ function startHost() {
   };
   connectHost();
   renderHost();
-  if (SET) loadQuestionSet();
+  loadQuestionSet();   // 沒帶 ?set= 時會試著載入 default.json
   document.addEventListener("keydown", e => {
     if (modal.innerHTML || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
     if (e.key === " " || e.key === "Enter" || e.key === "ArrowRight" || e.key === "PageDown") {
@@ -283,14 +283,16 @@ function connectHost() {
 }
 
 function loadQuestionSet() {
-  fetch(SET + ".json", { cache: "no-store" })
-    .then(r => { if (!r.ok) throw r.status; return r.json(); })
+  const name = SET || "default";
+  fetch(name + ".json", { cache: "no-store" })
+    .then(r => { if (!r.ok) throw 0; return r.json(); })
     .then(d => {
-      if (!Array.isArray(d) || !normalizeQs(d).length) throw "bad";
-      H.qs = d; H.setName = SET;
+      const qs = Array.isArray(d) ? d : d.questions;          // 檔案可以是題目陣列，或 {name, questions}
+      if (!Array.isArray(qs) || !normalizeQs(qs).length) throw 0;
+      H.qs = qs; H.setName = Array.isArray(d) ? name : (d.name || name);
       if (H.phase === "lobby") renderHost(); else renderBanner();
     })
-    .catch(() => { H.setErr = true; renderBanner(); });
+    .catch(() => { if (SET) { H.setErr = true; renderBanner(); } });   // 沒有 default.json 就安靜沿用原本題目
 }
 
 function joinURL() {
